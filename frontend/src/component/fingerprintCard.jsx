@@ -16,14 +16,29 @@ const statusMap = {
     label: "Risk Detected",
     ring: "shadow-rose-500/40",
   },
+  pending: {
+    dot: "bg-blue-400 animate-pulse",
+    label: "Analyzing…",
+    ring: "shadow-blue-400/40",
+  },
+  unknown: {
+    dot: "bg-gray-400",
+    label: "Unknown",
+    ring: "shadow-gray-400/40",
+  },
 };
+
+// Safe fallback if status is missing or unrecognized
+const DEFAULT_STATUS = statusMap.unknown;
+
 
 export function FingerprintCard({ fingerprint }) {
   const [copied, setCopied] = useState(false);
-  const s = statusMap[fingerprint.status];
+  const s = statusMap[fingerprint?.status] || DEFAULT_STATUS;
 
   function copy() {
-    navigator.clipboard.writeText(fingerprint.fingerprintId);
+    const idToCopy = fingerprint.fingerprintId || fingerprint.id || '';
+    navigator.clipboard.writeText(idToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -54,17 +69,23 @@ export function FingerprintCard({ fingerprint }) {
         </div>
 
         <div className="mt-2 flex items-center gap-3">
-          <code className="font-mono text-2xl font-semibold tracking-wider text-gradient">
-            {fingerprint.fingerprintId}
+          <code className="font-mono text-lg font-semibold tracking-wider text-gradient truncate max-w-xs">
+            {fingerprint.fingerprintId || fingerprint.id || "—"}
           </code>
 
           <button
             onClick={copy}
-            className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-muted-foreground transition hover:border-[oklch(0.7_0.22_270)]/60 hover:text-foreground"
+            className="shrink-0 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-muted-foreground transition hover:border-[oklch(0.7_0.22_270)]/60 hover:text-foreground"
           >
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
+
+        {fingerprint.fileName && (
+          <div className="mt-2 text-xs text-muted-foreground font-mono">
+            File: {fingerprint.fileName}
+          </div>
+        )}
       </div>
 
       <div className="relative mt-6 grid grid-cols-2 gap-4 border-t border-white/10 pt-4 text-xs">

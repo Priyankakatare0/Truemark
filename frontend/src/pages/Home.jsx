@@ -7,10 +7,12 @@ import { uploadImage } from "../services/api";
 const Home = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   async function handleFile(file, dataUrl) {
     try {
       setLoading(true);
+      setError(null);
 
       const { fingerprintId } = await uploadImage(file);
 
@@ -20,6 +22,7 @@ const Home = () => {
       navigate("/dashboard");
     } catch (err) {
       console.error("Upload failed:", err);
+      setError(err.message || "Failed to upload image. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -47,6 +50,11 @@ const Home = () => {
         </section>
 
         <section className="mx-auto max-w-3xl">
+          {error && (
+            <div className="mb-6 rounded-lg bg-red-500/10 border border-red-500/50 p-4 text-red-400 text-center">
+              {error}
+            </div>
+          )}
           <UploadZone onFile={handleFile} loading={loading} />
         </section>
 

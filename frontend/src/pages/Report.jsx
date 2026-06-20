@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Navbar } from "../component/Navbar";
+import { downloadReport } from "../services/api";
 
 export default function Report() {
   const [image, setImage] = useState(null);
-  const [fingerprintId, setFingerprintId] = useState("TM-DEMO-0000");
+  const [fingerprintId, setFingerprintId] = useState(null);
+  const [reportId, setReportId] = useState(null);
   const [score, setScore] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState(null);
   const [timestamp, setTimestamp] = useState("—");
 
   useEffect(() => {
@@ -16,20 +19,59 @@ export default function Report() {
     const img = sessionStorage.getItem("tm:image");
     const id = sessionStorage.getItem("tm:fingerprintId");
     const sc = sessionStorage.getItem("tm:score");
+    const rid = sessionStorage.getItem("tm:reportId");
 
     if (img) setImage(img);
     if (id) setFingerprintId(id);
-    if (sc) setScore(sc);
+    if (sc) setScore(parseFloat(sc));
+    if (rid) setReportId(rid);
   }, []);
 
-  function fakeDownload() {
-    setDownloading(true);
+  async function handleDownload() {
+    if (!reportId) {
+      setError("No report ID found. Please analyze an image first by going to the Dashboard.");
+      return;
+    }
 
-    setTimeout(() => {
-      setDownloading(false);
+    setDownloading(true);
+    setError(null);
+
+    try {
+      await downloadReport(reportId);
       setDone(true);
-    }, 1400);
+    } catch (err) {
+      console.error("Download failed:", err);
+      // Show a user-friendly message for PDF generation failures
+      if (err.message.includes("PDF generation failed on server")) {
+        setError(
+          `The PDF could not be generated server-side. This may be because Supabase Storage is not configured. ` +
+          `Your originality score is ${score ?? "—"}%. You can still use the fingerprint ID as proof.`
+        );
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setDownloading(false);
+    }
   }
+
+  const scoreLabel =
+    score === null
+      ? "—"
+      : score >= 85
+      ? "Highly Original"
+      : score >= 65
+      ? "Mostly Original"
+      : "Low Originality";
+
+  const scoreColor =
+    score === null
+      ? "text-muted-foreground"
+      : score >= 85
+      ? "text-emerald-400"
+      : score >= 65
+      ? "text-amber-400"
+      : "text-rose-400";
 
   return (
     <div className="min-h-screen">
@@ -53,12 +95,16 @@ export default function Report() {
               alt="Uploaded"
               className="max-h-[360px] w-full object-contain bg-black/30"
             />
-          ) : null}
+          ) : (
+            <div className="flex h-40 items-center justify-center bg-black/20 text-sm text-muted-foreground">
+              No image preview available
+            </div>
+          )}
 
           <div className="grid gap-4 p-6 sm:grid-cols-2">
             <Field
               label="Fingerprint ID"
-              value={fingerprintId}
+              value={fingerprintId || "—"}
               mono
             />
 
@@ -70,8 +116,16 @@ export default function Report() {
 
             <Field
               label="Originality Score"
-              value={score ? `${score} / 100` : "—"}
-              mono
+              value={
+                score !== null ? (
+                  <span className={scoreColor}>
+                    {score}% — {scoreLabel}
+                  </span>
+                ) : (
+                  "—"
+                )
+              }
+              mono={false}
             />
 
             <Field
@@ -79,14 +133,39 @@ export default function Report() {
               value="truemark.io"
               mono
             />
+
+            {reportId && (
+              <Field
+                label="Report ID"
+                value={reportId}
+                mono
+              />
+            )}
           </div>
         </div>
 
+        {/* Warning if no report ID */}
+        {!reportId && (
+          <div className="mt-6 glass rounded-2xl p-5 border border-amber-500/30 bg-amber-500/10">
+            <h3 className="text-sm font-semibold text-amber-400">No Report Available</h3>
+            <p className="mt-1 text-sm text-amber-300/80">
+              You need to analyze an image first. Go back to the Dashboard and wait for the analysis to complete.
+            </p>
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-6 glass rounded-2xl p-6 border border-red-500/30 bg-red-500/10">
+            <h3 className="text-lg font-semibold text-red-400">Download Failed</h3>
+            <p className="mt-2 text-sm text-red-300">{error}</p>
+          </div>
+        )}
+
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <button
-            onClick={fakeDownload}
-            disabled={downloading}
-            className="btn-primary rounded-xl px-6 py-3 text-sm font-semibold disabled:opacity-60"
+            onClick={handleDownload}
+            disabled={downloading || !reportId}
+            className="btn-primary rounded-xl px-6 py-3 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {downloading
               ? "Preparing PDF…"
@@ -104,7 +183,7 @@ export default function Report() {
 
           {done ? (
             <span className="text-xs text-emerald-400">
-              ✓ Certificate generated
+              ✓ Certificate downloaded
             </span>
           ) : null}
         </div>
@@ -121,7 +200,7 @@ function Field({ label, value, mono }) {
       </div>
 
       <div
-        className={`mt-1 text-sm text-foreground ${
+        className={`mt-1 text-sm text-foreground break-all ${
           mono ? "font-mono" : ""
         }`}
       >
