@@ -1,5 +1,6 @@
 # backend/main.py
 
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -21,12 +22,14 @@ from routes import all_routers
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing TrueMark Backend Service...")
-    # Pre-load the CLIP model so it's ready for immediate inference
-    try:
-        load_model()
-    except Exception as e:
-        logger.critical(f"Failed to load CLIP model on startup: {e}. Exiting.", exc_info=True)
-        raise e
+    if os.getenv("SKIP_MODEL_LOAD") != "1":
+        try:
+            load_model()
+        except Exception as e:
+            logger.critical(f"Failed to load CLIP model on startup: {e}. Exiting.", exc_info=True)
+            raise e
+    else:
+        logger.warning("SKIP_MODEL_LOAD=1 — CLIP model not preloaded")
     yield
     logger.info("Shutting down TrueMark Backend Service...")
 

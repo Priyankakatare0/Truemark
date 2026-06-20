@@ -1,31 +1,29 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Navbar } from "../component/Navbar";
 import { downloadReport } from "../services/api";
 
+function readSession(key) {
+  return sessionStorage.getItem(key);
+}
+
+function formatTimestamp(createdAt) {
+  if (createdAt) return new Date(createdAt).toLocaleString();
+  return new Date().toLocaleString();
+}
+
 export default function Report() {
-  const [image, setImage] = useState(null);
-  const [fingerprintId, setFingerprintId] = useState(null);
-  const [reportId, setReportId] = useState(null);
-  const [score, setScore] = useState(null);
+  const [image] = useState(() => readSession("tm:image"));
+  const [fingerprintId] = useState(() => readSession("tm:fingerprintId"));
+  const [reportId] = useState(() => readSession("tm:reportId"));
+  const [score] = useState(() => {
+    const sc = readSession("tm:score");
+    return sc ? parseFloat(sc) : null;
+  });
+  const [timestamp] = useState(() => formatTimestamp(readSession("tm:createdAt")));
   const [downloading, setDownloading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState(null);
-  const [timestamp, setTimestamp] = useState("—");
-
-  useEffect(() => {
-    setTimestamp(new Date().toLocaleString());
-
-    const img = sessionStorage.getItem("tm:image");
-    const id = sessionStorage.getItem("tm:fingerprintId");
-    const sc = sessionStorage.getItem("tm:score");
-    const rid = sessionStorage.getItem("tm:reportId");
-
-    if (img) setImage(img);
-    if (id) setFingerprintId(id);
-    if (sc) setScore(parseFloat(sc));
-    if (rid) setReportId(rid);
-  }, []);
 
   async function handleDownload() {
     if (!reportId) {
@@ -41,7 +39,6 @@ export default function Report() {
       setDone(true);
     } catch (err) {
       console.error("Download failed:", err);
-      // Show a user-friendly message for PDF generation failures
       if (err.message.includes("PDF generation failed on server")) {
         setError(
           `The PDF could not be generated server-side. This may be because Supabase Storage is not configured. ` +
@@ -102,18 +99,8 @@ export default function Report() {
           )}
 
           <div className="grid gap-4 p-6 sm:grid-cols-2">
-            <Field
-              label="Fingerprint ID"
-              value={fingerprintId || "—"}
-              mono
-            />
-
-            <Field
-              label="Timestamp"
-              value={timestamp}
-              mono
-            />
-
+            <Field label="Fingerprint ID" value={fingerprintId || "—"} mono />
+            <Field label="Timestamp" value={timestamp} mono />
             <Field
               label="Originality Score"
               value={
@@ -127,24 +114,11 @@ export default function Report() {
               }
               mono={false}
             />
-
-            <Field
-              label="Issuer"
-              value="truemark.io"
-              mono
-            />
-
-            {reportId && (
-              <Field
-                label="Report ID"
-                value={reportId}
-                mono
-              />
-            )}
+            <Field label="Issuer" value="truemark.io" mono />
+            {reportId && <Field label="Report ID" value={reportId} mono />}
           </div>
         </div>
 
-        {/* Warning if no report ID */}
         {!reportId && (
           <div className="mt-6 glass rounded-2xl p-5 border border-amber-500/30 bg-amber-500/10">
             <h3 className="text-sm font-semibold text-amber-400">No Report Available</h3>
@@ -182,9 +156,7 @@ export default function Report() {
           </Link>
 
           {done ? (
-            <span className="text-xs text-emerald-400">
-              ✓ Certificate downloaded
-            </span>
+            <span className="text-xs text-emerald-400">✓ Certificate downloaded</span>
           ) : null}
         </div>
       </main>
@@ -198,7 +170,6 @@ function Field({ label, value, mono }) {
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
-
       <div
         className={`mt-1 text-sm text-foreground break-all ${
           mono ? "font-mono" : ""

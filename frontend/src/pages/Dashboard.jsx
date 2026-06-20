@@ -8,62 +8,67 @@ import { MatchList } from "../component/MatchList";
 
 import { checkSimilarity, getFingerprint } from "../services/api";
 
+function computeStatus(score) {
+  if (score >= 85) return "original";
+  if (score >= 65) return "similar";
+  return "risk";
+}
+
+function readSession(key) {
+  return sessionStorage.getItem(key);
+}
+
 export default function Dashboard() {
-  const [image, setImage] = useState(null);
+  const [image] = useState(() => readSession("tm:image"));
   const [fingerprint, setFingerprint] = useState(null);
   const [score, setScore] = useState(null);
   const [matches, setMatches] = useState([]);
-  const [error, setError] = useState(null);
-  const [fingerprintLoading, setFingerprintLoading] = useState(true);
-  const [analysisLoading, setAnalysisLoading] = useState(true);
+  const [error, setError] = useState(() =>
+    readSession("tm:fingerprintId") ? null : "No fingerprint ID found. Please upload an image first."
+  );
+  const [loading, setLoading] = useState(() => Boolean(readSession("tm:fingerprintId")));
+  const [reportId, setReportId] = useState(null);
 
   useEffect(() => {
-    const img = sessionStorage.getItem("tm:image");
-    const id = sessionStorage.getItem("tm:fingerprintId");
+    const id = readSession("tm:fingerprintId");
+    if (!id) return;
 
-    if (img) setImage(img);
+    let cancelled = false;
 
-    if (!id) {
-      setFingerprintLoading(false);
-      setAnalysisLoading(false);
-      setError("No fingerprint ID found. Please upload an image first.");
-      return;
+    async function loadDashboard() {
+      try {
+        const fp = await getFingerprint(id);
+        const result = await checkSimilarity(id);
+        if (cancelled) return;
+
+        setFingerprint({ ...fp, status: computeStatus(result.score) });
+        setScore(result.score);
+        setMatches(result.matches);
+        setReportId(result.reportId);
+
+        sessionStorage.setItem("tm:score", String(result.score));
+        if (result.reportId) {
+          sessionStorage.setItem("tm:reportId", result.reportId);
+        }
+        if (fp.createdAt) {
+          sessionStorage.setItem("tm:createdAt", fp.createdAt);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Dashboard load failed:", err);
+        setError(err.message || "Failed to load analysis results.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
 
-    // Fetch fingerprint metadata from backend
-    setFingerprintLoading(true);
-    getFingerprint(id)
-      .then((fp) => setFingerprint(fp))
-      .catch((err) => console.error("Fingerprint fetch failed:", err))
-      .finally(() => setFingerprintLoading(false));
-
-    // Run similarity check against the database
-    setAnalysisLoading(true);
-    checkSimilarity(id)
-      .then((r) => {
-        setScore(r.score);
-        setMatches(r.matches);
-        sessionStorage.setItem("tm:score", String(r.score));
-
-        // Store the report ID for download later
-        if (r.reportId) {
-          sessionStorage.setItem("tm:reportId", r.reportId);
-        }
-
-        // Enrich fingerprint with computed status based on originality score
-        setFingerprint((prev) => {
-          if (!prev) return prev;
-          const status =
-            r.score >= 85 ? "original" : r.score >= 60 ? "similar" : "risk";
-          return { ...prev, status };
-        });
-      })
-      .catch((err) => {
-        console.error("Analysis failed:", err);
-        setError(err.message);
-      })
-      .finally(() => setAnalysisLoading(false));
+    loadDashboard();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const reportReady = !loading && !error && reportId;
 
   return (
     <div className="min-h-screen">
@@ -77,18 +82,24 @@ export default function Dashboard() {
             </h1>
 
             <p className="mt-1 text-sm text-muted-foreground">
-              {analysisLoading
+              {loading
                 ? "Analyzing your image for similarity matches…"
                 : "Your image has been fingerprinted and analyzed."}
             </p>
           </div>
 
-          <Link
-            to="/report"
-            className="btn-primary rounded-xl px-5 py-2.5 text-sm font-medium"
-          >
-            Download Report →
-          </Link>
+          {reportReady ? (
+            <Link
+              to="/report"
+              className="btn-primary rounded-xl px-5 py-2.5 text-sm font-medium"
+            >
+              Download Report →
+            </Link>
+          ) : (
+            <span className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm text-muted-foreground opacity-60">
+              Report pending…
+            </span>
+          )}
         </div>
 
         <div className="grid gap-6">
@@ -96,17 +107,18 @@ export default function Dashboard() {
             <div className="glass rounded-2xl p-6 border border-red-500/30 bg-red-500/10">
               <h3 className="text-lg font-semibold text-red-400">Analysis Failed</h3>
               <p className="mt-2 text-sm text-red-300">{error}</p>
+              <Link to="/" className="mt-4 inline-block text-sm text-red-200 underline">
+                ← Upload a new image
+              </Link>
             </div>
           )}
 
-          {/* Fingerprint Card */}
-          {fingerprintLoading ? (
+          {loading ? (
             <div className="glass h-40 animate-pulse rounded-2xl" />
           ) : fingerprint ? (
             <FingerprintCard fingerprint={fingerprint} />
           ) : null}
 
-          {/* Image Preview + Score */}
           <div className="grid gap-6 lg:grid-cols-[1fr_auto]">
             <div className="glass overflow-hidden rounded-2xl p-3">
               {image ? (
@@ -122,7 +134,7 @@ export default function Dashboard() {
               )}
             </div>
 
-            {analysisLoading ? (
+            {loading ? (
               <div className="glass flex h-72 w-72 flex-col items-center justify-center gap-3 animate-pulse rounded-2xl">
                 <div className="h-10 w-10 rounded-full border-4 border-[oklch(0.7_0.22_270)] border-t-transparent animate-spin" />
                 <span className="text-xs text-muted-foreground">Analyzing…</span>
@@ -132,8 +144,7 @@ export default function Dashboard() {
             ) : null}
           </div>
 
-          {/* Match List */}
-          {analysisLoading ? (
+          {loading ? (
             <div className="glass h-48 animate-pulse rounded-2xl" />
           ) : matches.length > 0 ? (
             <MatchList matches={matches} />

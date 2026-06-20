@@ -57,8 +57,9 @@ async def check_similarity(request: Request, check_req: CheckRequest):
         similar_images = await run_in_threadpool(
             find_similar_images,
             original_clip_vector,
-            exclude_id=str(fp_uuid),  # Exclude the image itself from matches
-            limit=10
+            str(fp_uuid),
+            10,
+            fingerprint.get("phash"),
         )
     except SimilaritySearchError as e:
         logger.error(f"Similarity search failed for {fp_uuid}: {e}", exc_info=True)

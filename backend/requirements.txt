@@ -18,6 +18,8 @@ opencv-python==4.11.0.86
 torch==2.6.0
 torchvision==0.21.0
 transformers==4.49.0
+sentence-transformers==3.4.1
+scikit-learn==1.6.1
 numpy==2.2.3
 
 # PDF generation
@@ -36,3 +38,7 @@ python-json-logger==3.2.1
 python-dotenv==1.0.1
 requests==2.32.3
 aiofiles==24.1.0
+
+# Testing
+pytest==8.3.4
+httpx==0.28.1
