@@ -33,6 +33,9 @@ export async function uploadImage(file, ownerLabel = null) {
       fileHash: response.data.file_hash,
       createdAt: response.data.created_at,
       fileName: response.data.file_name,
+      // Near-duplicate detection fields (populated when is_duplicate=true via similarity)
+      matchedFingerprintId: response.data.matched_fingerprint_id || null,
+      similarityScore: response.data.similarity_score || null,
     };
   } catch (error) {
     console.error('Upload failed:', error);

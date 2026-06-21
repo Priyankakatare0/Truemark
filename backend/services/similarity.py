@@ -1,5 +1,6 @@
 # backend/services/similarity.py
 
+import json
 import imagehash
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
@@ -10,6 +11,17 @@ from core.logging import logger
 
 class SimilaritySearchError(Exception):
     """Raised when similarity search fails."""
+
+
+def _parse_vector(v) -> list[float]:
+    """
+    Supabase PostgREST returns VECTOR columns as a JSON string like
+    '[0.047, -0.002, ...]' instead of an actual list. This helper normalises
+    both representations into a plain Python list of floats.
+    """
+    if isinstance(v, str):
+        return json.loads(v)
+    return list(v)
 
 
 def _cosine_sim(a: list[float], b: list[float]) -> float:
@@ -36,6 +48,7 @@ def find_similar_images(
     Boosts near-duplicate pHash matches for cropped/resized variants.
     """
     try:
+        query_vector = _parse_vector(query_vector)
         matches = supabase_client.native_vector_search(
             query_vector, match_count=limit, exclude_id=exclude_id
         )
@@ -68,11 +81,16 @@ def _python_vector_search(
         vector = record.get("clip_vector")
         if not vector:
             continue
+        try:
+            parsed_vector = _parse_vector(vector)
+        except (ValueError, TypeError) as parse_err:
+            logger.warning("Skipping record %s — bad clip_vector: %s", fid, parse_err)
+            continue
         scored.append(
             {
                 "fingerprint_id": fid,
                 "file_name": record.get("file_name", "unknown"),
-                "similarity_score": _cosine_sim(query_vector, vector),
+                "similarity_score": _cosine_sim(query_vector, parsed_vector),
                 "is_sample": bool(record.get("is_sample", False)),
             }
         )
@@ -110,9 +128,22 @@ def _boost_phash_matches(matches: list[dict], query_phash: str) -> list[dict]:
     return boosted
 
 
+# Minimum cosine similarity to consider a match "relevant".
+# CLIP vectors of completely unrelated images can still score 0.2–0.5,
+# so we ignore anything below this threshold to avoid false low-originality scores.
+_SIMILARITY_THRESHOLD = 0.75
+
+
 def compute_originality_score(matches: list[dict]) -> float:
-    """100 minus average similarity of top matches, or 100 if none."""
-    if not matches:
+    """
+    Originality is determined by the single most-similar other image found.
+    Only matches above the relevance threshold are considered.
+    - 0 relevant matches  → 100% original
+    - Best match = 1.0    → 0% original (exact copy)
+    - Best match = 0.8    → 20% original (strong plagiarism)
+    """
+    relevant = [m for m in matches if float(m["similarity_score"]) >= _SIMILARITY_THRESHOLD]
+    if not relevant:
         return 100.0
-    avg_similarity = sum(float(m["similarity_score"]) for m in matches) / len(matches)
-    return max(0.0, min(100.0, round((1 - avg_similarity) * 100, 1)))
+    best_similarity = max(float(m["similarity_score"]) for m in relevant)
+    return max(0.0, min(100.0, round((1 - best_similarity) * 100, 1)))

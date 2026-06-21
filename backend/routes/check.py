@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from models.schemas import CheckResponse, MatchResult
 from db import supabase_client
-from services.similarity import find_similar_images, SimilaritySearchError
+from services.similarity import find_similar_images, compute_originality_score, SimilaritySearchError
 from core.logging import logger
 from core.config import settings
 from middleware.rate_limit import limiter
@@ -68,12 +68,8 @@ async def check_similarity(request: Request, check_req: CheckRequest):
             detail=f"Similarity analysis failed: {str(e)}"
         )
     
-    # 4. Calculate originality score (100 - average similarity of top matches)
-    if similar_images:
-        avg_similarity = sum(m["similarity_score"] for m in similar_images) / len(similar_images)
-        originality_score = max(0, min(100, round((1 - avg_similarity) * 100, 1)))
-    else:
-        originality_score = 100.0  # Perfect score if no matches found
+    # 4. Calculate originality score using threshold-based top-match scoring
+    originality_score = compute_originality_score(similar_images)
     
     # 5. Format matches for response
     matches: List[MatchResult] = []

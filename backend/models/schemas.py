@@ -17,6 +17,10 @@ class UploadResponse(BaseModel):
     file_hash: str
     is_duplicate: bool
     created_at: datetime
+    # Populated when is_duplicate=True due to near-duplicate (similarity) detection.
+    # None for exact hash duplicates or new originals.
+    matched_fingerprint_id: Optional[UUID] = None
+    similarity_score: Optional[float] = None
 
 
 class MatchResult(BaseModel):

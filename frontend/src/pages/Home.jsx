@@ -14,10 +14,26 @@ const Home = () => {
       setLoading(true);
       setError(null);
 
-      const { fingerprintId } = await uploadImage(file);
+      const { fingerprintId, isDuplicate, matchedFingerprintId, similarityScore } =
+        await uploadImage(file);
 
       sessionStorage.setItem("tm:image", dataUrl);
-      sessionStorage.setItem("tm:fingerprintId", fingerprintId);
+
+      if (isDuplicate && matchedFingerprintId) {
+        // Near-duplicate detected — route to the existing matched image's dashboard.
+        // The matched image is already registered; we reuse its full analysis.
+        sessionStorage.setItem("tm:fingerprintId", matchedFingerprintId);
+        sessionStorage.setItem("tm:isDuplicate", "true");
+        sessionStorage.setItem(
+          "tm:duplicateSimilarity",
+          String(Math.round((similarityScore || 1) * 100))
+        );
+      } else {
+        // Genuine original — proceed with the newly registered fingerprint.
+        sessionStorage.removeItem("tm:isDuplicate");
+        sessionStorage.removeItem("tm:duplicateSimilarity");
+        sessionStorage.setItem("tm:fingerprintId", fingerprintId);
+      }
 
       navigate("/dashboard");
     } catch (err) {

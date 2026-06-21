@@ -16,6 +16,7 @@ from db import supabase_client
 from middleware.rate_limit import limiter
 from models.schemas import UploadResponse
 from services.fingerprint import generate_fingerprint
+from services.similarity import find_similar_images, _SIMILARITY_THRESHOLD
 from utils.validation import validate_image_upload
 
 router = APIRouter()
@@ -51,6 +52,7 @@ async def upload_image(
 
         fp_data = await run_in_threadpool(generate_fingerprint, temp_path)
 
+        # ── Step 1: Exact-hash duplicate check (fast, free DB lookup) ──────────
         existing = supabase_client.get_fingerprint_by_hash(fp_data["file_hash"])
         if existing:
             created_at = existing.get("created_at")
@@ -65,6 +67,50 @@ async def upload_image(
             )
             return JSONResponse(status_code=200, content=payload.model_dump(mode="json"))
 
+        # ── Step 2: Near-duplicate similarity check (before registering) ───────
+        # Compare the new image's CLIP vector against every stored fingerprint.
+        # If any existing image is above the threshold, treat this upload as a
+        # near-duplicate — report the match and do NOT register a new original.
+        try:
+            near_matches = await run_in_threadpool(
+                find_similar_images,
+                fp_data["clip_vector"],
+                None,          # exclude_id=None — nothing registered yet
+                1,             # we only need the single best match
+                fp_data["phash"],
+            )
+        except Exception as sim_err:
+            # Similarity search failure is non-fatal — log and continue as original
+            logger.warning("Near-duplicate pre-check failed (continuing): %s", sim_err)
+            near_matches = []
+
+        if near_matches:
+            best = near_matches[0]
+            best_score = float(best["similarity_score"])
+            if best_score >= _SIMILARITY_THRESHOLD:
+                matched_id = best["fingerprint_id"]
+                logger.info(
+                    "Near-duplicate detected: uploaded file matches existing %s at %.3f similarity",
+                    matched_id, best_score,
+                )
+                # Fetch the matched record for full metadata
+                matched_record = supabase_client.get_fingerprint_by_id(matched_id)
+                if matched_record:
+                    created_at = matched_record.get("created_at")
+                    if isinstance(created_at, str):
+                        created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    payload = UploadResponse(
+                        fingerprint_id=UUID(matched_id),
+                        file_name=matched_record["file_name"],
+                        file_hash=matched_record["file_hash"],
+                        is_duplicate=True,
+                        created_at=created_at,
+                        matched_fingerprint_id=UUID(matched_id),
+                        similarity_score=round(best_score, 4),
+                    )
+                    return JSONResponse(status_code=200, content=payload.model_dump(mode="json"))
+
+        # ── Step 3: Genuine original — register and save ────────────────────────
         record = supabase_client.insert_fingerprint(
             file_name=file.filename or "upload.jpg",
             file_hash=fp_data["file_hash"],

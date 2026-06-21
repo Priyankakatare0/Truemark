@@ -28,6 +28,9 @@ export default function Dashboard() {
   );
   const [loading, setLoading] = useState(() => Boolean(readSession("tm:fingerprintId")));
   const [reportId, setReportId] = useState(null);
+  // Near-duplicate detection state — set by Home.jsx before navigating here
+  const isDuplicate = readSession("tm:isDuplicate") === "true";
+  const duplicateSimilarity = readSession("tm:duplicateSimilarity");
 
   useEffect(() => {
     const id = readSession("tm:fingerprintId");
@@ -103,6 +106,26 @@ export default function Dashboard() {
         </div>
 
         <div className="grid gap-6">
+        {/* Near-duplicate warning banner */}
+          {isDuplicate && (
+            <div className="glass rounded-2xl p-5 border border-amber-500/40 bg-amber-500/10 flex items-start gap-4">
+              <div className="mt-0.5 flex-shrink-0 flex h-9 w-9 items-center justify-center rounded-full bg-amber-500/20">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5 text-amber-400">
+                  <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-amber-300">Near-Duplicate Detected</h3>
+                <p className="mt-1 text-sm text-amber-200/80">
+                  Your uploaded image closely matches an existing registered work
+                  {duplicateSimilarity ? ` (${duplicateSimilarity}% similarity)` : ""}.
+                  It has <strong>not</strong> been registered as a new original.
+                  The analysis below shows the matched image's originality report.
+                </p>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="glass rounded-2xl p-6 border border-red-500/30 bg-red-500/10">
               <h3 className="text-lg font-semibold text-red-400">Analysis Failed</h3>
