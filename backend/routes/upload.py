@@ -15,6 +15,7 @@ from core.logging import logger
 from db import supabase_client
 from middleware.rate_limit import limiter
 from models.schemas import UploadResponse
+from routes.auth import get_current_user
 from services.fingerprint import generate_fingerprint
 from services.similarity import find_similar_images, _SIMILARITY_THRESHOLD
 from utils.validation import validate_image_upload
@@ -41,6 +42,13 @@ async def upload_image(
     """Upload an image, generate fingerprint, and store ownership record."""
     await validate_image_upload(file)
 
+    # Extract authenticated user from JWT cookie (optional — graceful if not logged in)
+    auth_user = get_current_user(request)
+    user_id = auth_user["sub"] if auth_user else None
+    # Use the authenticated user's name as owner_label if not explicitly provided
+    if not owner_label and auth_user:
+        owner_label = auth_user.get("name")
+
     suffix = os.path.splitext(file.filename or "upload.jpg")[1] or ".jpg"
     temp_path = None
 
@@ -64,6 +72,8 @@ async def upload_image(
                 file_hash=existing["file_hash"],
                 is_duplicate=True,
                 created_at=created_at,
+                matched_fingerprint_id=UUID(existing["id"]),
+                similarity_score=1.0,
             )
             return JSONResponse(status_code=200, content=payload.model_dump(mode="json"))
 
@@ -110,7 +120,7 @@ async def upload_image(
                     )
                     return JSONResponse(status_code=200, content=payload.model_dump(mode="json"))
 
-        # ── Step 3: Genuine original — register and save ────────────────────────
+        # ── Step 3: Genuine original — register and save ────────────────────────────────────
         record = supabase_client.insert_fingerprint(
             file_name=file.filename or "upload.jpg",
             file_hash=fp_data["file_hash"],
@@ -118,6 +128,7 @@ async def upload_image(
             clip_vector=fp_data["clip_vector"],
             owner_label=owner_label,
             is_sample=False,
+            user_id=user_id,
         )
 
         fingerprint_id = record["id"]

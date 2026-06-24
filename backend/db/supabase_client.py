@@ -42,17 +42,20 @@ def insert_fingerprint(
     phash: str,
     clip_vector: list,
     owner_label: str = None,
-    is_sample: bool = False
+    is_sample: bool = False,
+    user_id: str = None,
 ) -> dict:
-    """Insert a fingerprint record."""
+    """Insert a fingerprint record, optionally linked to a user."""
     data = {
         "file_name": file_name,
         "file_hash": file_hash,
         "phash": phash,
         "clip_vector": clip_vector,
         "owner_label": owner_label,
-        "is_sample": is_sample
+        "is_sample": is_sample,
     }
+    if user_id:
+        data["user_id"] = user_id
     try:
         response = _get_client().table("fingerprints").insert(data).execute()
         if not response.data:
@@ -118,15 +121,18 @@ def insert_report(
     fingerprint_id: str,
     originality_score: float,
     top_matches: list,
-    pdf_url: str = None
+    pdf_url: str = None,
+    user_id: str = None,
 ) -> dict:
-    """Insert a check report record."""
+    """Insert a check report record, optionally linked to a user."""
     data = {
         "fingerprint_id": fingerprint_id,
         "originality_score": originality_score,
         "top_matches": top_matches,
-        "pdf_url": pdf_url
+        "pdf_url": pdf_url,
     }
+    if user_id:
+        data["user_id"] = user_id
     try:
         response = _get_client().table("reports").insert(data).execute()
         if not response.data:
@@ -189,3 +195,60 @@ def get_report_signed_url(storage_path: str) -> str:
     except Exception as e:
         logger.error(f"Supabase get_report_signed_url failed: {e}", exc_info=True)
         raise e
+
+# =========================
+# User History
+# =========================
+
+def get_fingerprints_by_user_id(user_id: str, limit: int = 20, offset: int = 0) -> list[dict]:
+    """Fetch all fingerprints belonging to a specific user, newest first."""
+    try:
+        response = (
+            _get_client()
+            .table("fingerprints")
+            .select("id, file_name, file_hash, phash, owner_label, is_sample, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .offset(offset)
+            .execute()
+        )
+        return response.data or []
+    except Exception as e:
+        logger.error(f"Supabase get_fingerprints_by_user_id failed: {e}", exc_info=True)
+        raise e
+
+
+def get_reports_by_user_id(user_id: str, limit: int = 20, offset: int = 0) -> list[dict]:
+    """Fetch all reports belonging to a specific user, newest first."""
+    try:
+        response = (
+            _get_client()
+            .table("reports")
+            .select("id, fingerprint_id, originality_score, pdf_url, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .offset(offset)
+            .execute()
+        )
+        return response.data or []
+    except Exception as e:
+        logger.error(f"Supabase get_reports_by_user_id failed: {e}", exc_info=True)
+        raise e
+
+
+def count_fingerprints_by_user_id(user_id: str) -> int:
+    """Count total fingerprints for a user."""
+    try:
+        response = (
+            _get_client()
+            .table("fingerprints")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return response.count or 0
+    except Exception as e:
+        logger.error(f"Supabase count_fingerprints_by_user_id failed: {e}", exc_info=True)
+        return 0

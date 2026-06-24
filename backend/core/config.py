@@ -1,5 +1,6 @@
 # backend/core/config.py
 
+import secrets
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
@@ -19,9 +20,13 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     LOG_LEVEL: str = "INFO"
 
-    # Auth
+    # Auth (API key gating — separate from JWT user auth)
     API_AUTH_ENABLED: bool = False
     API_KEY: Optional[str] = None
+
+    # JWT User Authentication
+    JWT_SECRET: str = Field(default_factory=lambda: secrets.token_hex(32))
+    JWT_EXPIRE_MINUTES: int = 30
 
     # Limits
     MAX_UPLOAD_SIZE_MB: int = 10

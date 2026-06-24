@@ -6,7 +6,7 @@ import { FingerprintCard } from "../component/fingerprintCard";
 import { ScoreCard } from "../component/ScoreCard";
 import { MatchList } from "../component/MatchList";
 
-import { checkSimilarity, getFingerprint } from "../services/api";
+import { checkSimilarity, getFingerprint, exportToNotion } from "../services/api";
 
 function computeStatus(score) {
   if (score >= 85) return "original";
@@ -28,6 +28,7 @@ export default function Dashboard() {
   );
   const [loading, setLoading] = useState(() => Boolean(readSession("tm:fingerprintId")));
   const [reportId, setReportId] = useState(null);
+  const [exporting, setExporting] = useState(false);
   // Near-duplicate detection state — set by Home.jsx before navigating here
   const isDuplicate = readSession("tm:isDuplicate") === "true";
   const duplicateSimilarity = readSession("tm:duplicateSimilarity");
@@ -52,6 +53,17 @@ export default function Dashboard() {
         sessionStorage.setItem("tm:score", String(result.score));
         if (result.reportId) {
           sessionStorage.setItem("tm:reportId", result.reportId);
+          
+          // Auto-sync Notion
+          if (localStorage.getItem("tm:notion_auto_sync") === "true") {
+            const apiKey = localStorage.getItem("tm:notion_api_key");
+            const dbId = localStorage.getItem("tm:notion_database_id");
+            if (apiKey && dbId) {
+              const isDuplicateLocal = readSession("tm:isDuplicate") === "true";
+              exportToNotion(apiKey, dbId, result.reportId, id, isDuplicateLocal)
+                .catch(e => console.error("Auto-sync failed:", e));
+            }
+          }
         }
         if (fp.createdAt) {
           sessionStorage.setItem("tm:createdAt", fp.createdAt);
@@ -70,6 +82,28 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, []);
+
+  async function handleExportToNotion() {
+    const apiKey = localStorage.getItem("tm:notion_api_key");
+    const dbId = localStorage.getItem("tm:notion_database_id");
+    
+    if (!apiKey || !dbId) {
+      alert("Please configure Notion in your User Dashboard settings first.");
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const res = await exportToNotion(apiKey, dbId, reportId, readSession("tm:fingerprintId"), isDuplicate);
+      if (res.success && res.notion_url) {
+        window.open(res.notion_url, "_blank");
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const reportReady = !loading && !error && reportId;
 
@@ -92,12 +126,21 @@ export default function Dashboard() {
           </div>
 
           {reportReady ? (
-            <Link
-              to="/report"
-              className="btn-primary rounded-xl px-5 py-2.5 text-sm font-medium"
-            >
-              Download Report →
-            </Link>
+            <div className="flex gap-3">
+              <button
+                onClick={handleExportToNotion}
+                disabled={exporting}
+                className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
+              >
+                {exporting ? "Exporting…" : "↗ Export to Notion"}
+              </button>
+              <Link
+                to="/report"
+                className="btn-primary rounded-xl px-5 py-2.5 text-sm font-medium"
+              >
+                Download Report →
+              </Link>
+            </div>
           ) : (
             <span className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm text-muted-foreground opacity-60">
               Report pending…

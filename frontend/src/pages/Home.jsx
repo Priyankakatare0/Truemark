@@ -3,9 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Navbar } from "../component/Navbar";
 import { UploadZone } from "../component/UploadZone";
 import { uploadImage } from "../services/api";
+import { useAuth } from "../context/AuthContext";
+
 
 const Home = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -14,8 +17,11 @@ const Home = () => {
       setLoading(true);
       setError(null);
 
+      // Pass the authenticated user's name as owner_label so the fingerprint
+      // is linked to them in the database (user_id is sent via the JWT cookie)
+      const ownerLabel = user?.name || null;
       const { fingerprintId, isDuplicate, matchedFingerprintId, similarityScore } =
-        await uploadImage(file);
+        await uploadImage(file, ownerLabel);
 
       sessionStorage.setItem("tm:image", dataUrl);
 
@@ -66,6 +72,15 @@ const Home = () => {
         </section>
 
         <section className="mx-auto max-w-3xl">
+          {/* Sign-in nudge for unauthenticated users */}
+          {!user && (
+            <div className="mb-5 rounded-xl border border-[oklch(0.7_0.22_270)]/20 bg-[oklch(0.7_0.22_270)]/5 px-4 py-3 text-sm text-center text-muted-foreground">
+              <span>
+                <a href="/login" className="font-medium text-[oklch(0.75_0.22_270)] hover:underline">Sign in</a>{" "}
+                to link uploads to your account and build your ownership history.
+              </span>
+            </div>
+          )}
           {error && (
             <div className="mb-6 rounded-lg bg-red-500/10 border border-red-500/50 p-4 text-red-400 text-center">
               {error}

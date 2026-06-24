@@ -10,10 +10,12 @@ from pydantic import BaseModel
 
 from models.schemas import CheckResponse, MatchResult
 from db import supabase_client
-from services.similarity import find_similar_images, compute_originality_score, SimilaritySearchError
+from services.similarity import find_similar_images, compute_originality_score, SimilaritySearchError, _SIMILARITY_THRESHOLD
 from core.logging import logger
 from core.config import settings
 from middleware.rate_limit import limiter
+from routes.auth import get_current_user
+from db import user_client
 
 router = APIRouter()
 
@@ -27,6 +29,10 @@ async def check_similarity(request: Request, check_req: CheckRequest):
     Checks a fingerprint against the database for similar images.
     Returns an originality score and list of top matches, generates a report ID.
     """
+    # Extract authenticated user from JWT cookie (optional)
+    auth_user = get_current_user(request)
+    user_id = auth_user["sub"] if auth_user else None
+
     # 1. Validate the fingerprint ID format
     try:
         fp_uuid = UUID(check_req.fingerprint_id)
@@ -74,21 +80,32 @@ async def check_similarity(request: Request, check_req: CheckRequest):
     # 5. Format matches for response
     matches: List[MatchResult] = []
     for sim in similar_images:
-        matches.append(MatchResult(
-            fingerprint_id=UUID(sim["fingerprint_id"]),
-            file_name=sim["file_name"],
-            similarity_score=float(sim["similarity_score"]),
-            is_sample=bool(sim.get("is_sample", False))
-        ))
+        score = float(sim["similarity_score"])
+        # Only return matches that are above the similarity threshold
+        if score >= _SIMILARITY_THRESHOLD:
+            matches.append(MatchResult(
+                fingerprint_id=UUID(sim["fingerprint_id"]),
+                file_name=sim["file_name"],
+                # Force similarity to 100% as requested by the user
+                similarity_score=1.0,
+                is_sample=bool(sim.get("is_sample", False))
+            ))
     
     # 6. Save the report to the database for later PDF generation
     try:
         report_record = supabase_client.insert_report(
             fingerprint_id=str(fp_uuid),
             originality_score=originality_score,
-            top_matches=similar_images
+            top_matches=similar_images,
+            user_id=user_id,
         )
         report_id = UUID(report_record["id"])
+        # Increment the user's report counter
+        if user_id:
+            try:
+                user_client.increment_user_reports(user_id)
+            except Exception as inc_err:
+                logger.warning("Failed to increment user reports counter: %s", inc_err)
     except Exception as e:
         logger.error(f"Failed to save report for {fp_uuid}: {e}", exc_info=True)
         # Still return the results even if we can't save the report

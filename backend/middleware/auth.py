@@ -11,7 +11,12 @@ from core.logging import logger
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Optional Bearer token auth gated by API_AUTH_ENABLED."""
 
-    EXEMPT_PATHS = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
+    EXEMPT_PATHS = {
+        "/", "/health", "/docs", "/openapi.json", "/redoc",
+        # Auth endpoints are always public — they issue/validate the JWT
+        "/auth/signup", "/auth/login", "/auth/logout", "/auth/me",
+    }
+
 
     async def dispatch(self, request: Request, call_next):
         if not settings.API_AUTH_ENABLED:

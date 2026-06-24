@@ -104,7 +104,7 @@ def _boost_phash_matches(matches: list[dict], query_phash: str) -> list[dict]:
     if not matches:
         return matches
 
-    ids = [m["fingerprint_id"] for m in matches]
+    ids = [m.get("fingerprint_id", m.get("id")) for m in matches]
     phash_map: dict[str, str] = {}
 
     for fid in ids:
@@ -115,7 +115,7 @@ def _boost_phash_matches(matches: list[dict], query_phash: str) -> list[dict]:
     boosted = []
     for match in matches:
         score = float(match["similarity_score"])
-        ph = phash_map.get(match["fingerprint_id"])
+        ph = phash_map.get(match.get("fingerprint_id", match.get("id")))
         if ph:
             dist = _phash_distance(query_phash, ph)
             if dist <= 5:
@@ -139,11 +139,13 @@ def compute_originality_score(matches: list[dict]) -> float:
     Originality is determined by the single most-similar other image found.
     Only matches above the relevance threshold are considered.
     - 0 relevant matches  → 100% original
-    - Best match = 1.0    → 0% original (exact copy)
-    - Best match = 0.8    → 20% original (strong plagiarism)
+    - Best match >= thresh → 0% original (exact copy)
     """
     relevant = [m for m in matches if float(m["similarity_score"]) >= _SIMILARITY_THRESHOLD]
     if not relevant:
         return 100.0
-    best_similarity = max(float(m["similarity_score"]) for m in relevant)
-    return max(0.0, min(100.0, round((1 - best_similarity) * 100, 1)))
+    
+    # The user requested that the similarity score should become either 0 or 100, not anything between.
+    # Therefore, if there is ANY relevant match above the threshold, it is considered 
+    # a duplicate (100% similar), meaning it is 0% original.
+    return 0.0
